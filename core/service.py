@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Any
 
@@ -21,6 +22,21 @@ from .qzone.constants import (
     QZONE_MSG_NON_OBJECT_RESPONSE,
     QZONE_MSG_PERMISSION_DENIED,
 )
+
+RETRY_DELAYS = (10, 30, 60)
+
+
+async def _retry(func, *args, name: str = "", **kwargs):
+    last_error = None
+    for i, delay in enumerate(RETRY_DELAYS):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            if i < len(RETRY_DELAYS) - 1:
+                logger.warning(f"{name} 失败，{delay}秒后重试 ({i + 1}/{len(RETRY_DELAYS)}): {e}")
+                await asyncio.sleep(delay)
+    raise last_error
 
 
 class PostService:
@@ -221,7 +237,7 @@ class PostService:
         """点赞帖子"""
         if not post.tid:
             raise ValueError("帖子 tid 为空")
-        await self.qzone.like(post)
+        await _retry(self.qzone.like, post, name="点赞")
         logger.info(f"已点赞 → {post.name}")
 
 
@@ -234,7 +250,7 @@ class PostService:
         if not content:
             raise ValueError("生成评论内容为空")
 
-        await self.qzone.comment(post, content)
+        await _retry(self.qzone.comment, post, content, name="评论")
 
         uin = await self.session.get_uin()
         name = await self.session.get_nickname()
@@ -278,7 +294,7 @@ class PostService:
             raise ValueError("生成回复内容为空")
 
         # 发回复
-        resp = await self.qzone.reply(post, comment, content)
+        resp = await _retry(self.qzone.reply, post, comment, content, name="回复评论")
         if not resp.ok:
             raise RuntimeError(resp.message)
 
@@ -319,8 +335,11 @@ class PostService:
                 images=images or [],
             )
 
+        # 发布前验证登录态
+        await _retry(self.qzone.get_visitor, name="登录态预检")
+
         # 发布
-        resp = await self.qzone.publish(post)
+        resp = await _retry(self.qzone.publish, post, name="发布说说")
         if not resp.ok:
             raise RuntimeError(f"发布说说失败：{resp.data}")
 
@@ -337,6 +356,6 @@ class PostService:
         """删除帖子"""
         if not post.tid:
             raise ValueError("帖子 tid 为空")
-        await self.qzone.delete(post.tid)
+        await _retry(self.qzone.delete, post.tid, name="删除说说")
         if post.id:
             await self.db.delete(post.id)

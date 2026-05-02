@@ -3,6 +3,8 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
 
+from astrbot.api import logger
+
 from .config import PluginConfig
 from .db import PostDB
 from .model import Post
@@ -103,7 +105,8 @@ class CampusWall:
         try:
             post_ = await self.service.publish_post(post=post)
         except Exception as e:
-            yield event.plain_result(str(e))
+            logger.error(f"发布投稿失败: {e}")
+            yield event.plain_result("发布投稿失败，请稍后重试")
             return
 
         if not self.cfg.silent_approve:

@@ -14,6 +14,13 @@ class LLMAction:
         self.cfg = config
         self.context = config.context
 
+    async def _get_persona(self) -> str:
+        try:
+            persona = await self.context.persona_manager.get_default_persona_v3()
+            return persona.prompt or ""
+        except Exception:
+            return ""
+
     def _build_context(
         self, round_messages: list[dict[str, Any]]
     ) -> list[dict[str, str]]:
@@ -97,8 +104,11 @@ class LLMAction:
             contexts = await self._get_msg_contexts(group_id)
         # TODO: 更多模式
 
+        persona = await self._get_persona()
+
         # 系统提示，要求使用三对双引号包裹正文
         system_prompt = (
+            f"{persona}\n\n"
             f"# 写作主题：{topic or '从聊天内容中选一个主题'}\n\n"
             "# 输出格式要求：\n"
             '- 使用三对双引号（"""）将正文内容包裹起来。\n\n' + self.cfg.llm.post_prompt
@@ -129,16 +139,18 @@ class LLMAction:
         if not isinstance(provider, Provider):
             logger.error("未配置用于文本生成任务的 LLM 提供商")
             return None
+        persona = await self._get_persona()
+
         try:
             content = post.text
-            if post.rt_con:  # 转发文本
+            if post.rt_con:
                 content += f"\n[转发]\n{post.rt_con}"
 
             prompt = f"\n[帖子内容]：\n{content}"
 
             logger.debug(prompt)
             llm_response = await provider.text_chat(
-                system_prompt=self.cfg.llm.comment_prompt,
+                system_prompt=f"{persona}\n\n{self.cfg.llm.comment_prompt}",
                 prompt=prompt,
                 image_urls=post.images,
             )
@@ -160,16 +172,18 @@ class LLMAction:
         if not isinstance(provider, Provider):
             logger.error("未配置用于文本生成任务的 LLM 提供商")
             return None
+        persona = await self._get_persona()
+
         try:
             content = post.text
-            if post.rt_con:  # 转发文本
+            if post.rt_con:
                 content += f"\n[转发]\n{post.rt_con}"
 
             prompt = f"\n## 帖子内容\n{content}"
             prompt += f"\n## 要回复的评论\n{comment.nickname}：{comment.content}"
             logger.debug(prompt)
             llm_response = await provider.text_chat(
-                system_prompt=self.cfg.llm.reply_prompt, prompt=prompt
+                system_prompt=f"{persona}\n\n{self.cfg.llm.reply_prompt}", prompt=prompt
             )
             reply = re.sub(r"[\s\u3000]+", "", llm_response.completion_text).rstrip(
                 "。"

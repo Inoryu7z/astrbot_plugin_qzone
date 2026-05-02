@@ -39,8 +39,8 @@ git clone https://github.com/Zhalslar/astrbot_plugin_qzone
 ### 定时调度说明
 
 - `publish_cron` / `comment_cron` 现在表示任务的**基准时间**（Cron 表达式：分 时 日 月 周）。
-- `publish_offset_minutes` / `comment_offset_minutes` 表示围绕基准时间的随机前后浮动范围（单位分钟，`±N`）。
-- 例如：`publish_cron = 30 23 * * *` 且 `publish_offset_minutes = 30`，表示每天会在 `23:00 ~ 24:00` 间随机执行一次自动发说说。
+- `publish_offset` / `comment_offset` 表示围绕基准时间的随机前后浮动范围（单位秒，`±N`）。
+- 例如：`publish_cron = 30 23 * * *` 且 `publish_offset = 600`（即10分钟），表示每天会在 `22:50 ~ 23:10` 间随机执行一次自动发说说。
 - 将偏移设为 `0` 可关闭浮动，严格按 Cron 时间触发。
 
 ## 🐔 使用说明（QzonePlugin）

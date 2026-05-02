@@ -39,7 +39,7 @@ class AutoRandomCronTask:
         self._register_task()
 
         logger.info(
-            f"[{self.job_name}] 已启动，任务周期：{self.cron_expr}，偏移范围：±{self.offset_seconds} 分钟"
+            f"[{self.job_name}] 已启动，任务周期：{self.cron_expr}，偏移范围：±{self.offset_seconds} 秒"
         )
 
     def _register_task(self):
@@ -149,8 +149,6 @@ class AutoComment(AutoRandomCronTask):
         for post in posts:
             try:
                 await self.service.comment_posts(post)
-                if self.cfg.trigger.like_when_comment:
-                    await self.service.like_posts(post)
                 if not self.cfg.silent_approve:
                     await self.sender.send_admin_post(post, message="定时读说说")
             except Exception as e:

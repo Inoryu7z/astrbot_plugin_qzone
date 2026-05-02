@@ -1,15 +1,8 @@
-from typing import Union
-
-import aiohttp
-
-from astrbot.api import logger
 from astrbot.core.message.components import At, Image, Reply
 from astrbot.core.platform import AstrMessageEvent
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
-
-BytesOrStr = Union[str, bytes]  # noqa: UP007
 
 
 def get_ats(event: AiocqhttpMessageEvent) -> list[str]:
@@ -79,18 +72,6 @@ def parse_range(event: AstrMessageEvent) -> tuple[int, int]:
         return n - 1, 1
     except ValueError:
         return 0, 1
-
-
-async def download_file(url: str) -> bytes | None:
-    """下载图片"""
-    url = url.replace("https://", "http://")
-    try:
-        async with aiohttp.ClientSession() as client:
-            response = await client.get(url)
-            img_bytes = await response.read()
-            return img_bytes
-    except Exception as e:
-        logger.error(f"图片下载失败: {e}")
 
 
 async def get_image_urls(event: AstrMessageEvent, reply: bool = True) -> list[str]:

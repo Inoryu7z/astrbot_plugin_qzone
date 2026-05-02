@@ -99,7 +99,7 @@ class QzonePlugin(Star):
                             send_admin=self.cfg.trigger.send_admin,
                         )
                 except Exception as e:
-                    logger.error(e)
+                    logger.error(f"读说说触发评论失败: {e}")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("查看访客")
@@ -109,8 +109,8 @@ class QzonePlugin(Star):
             msg = await self.service.view_visitor()
             await self.sender.send_msg(event, msg)
         except Exception as e:
-            yield event.plain_result(str(e))
-            logger.error(e)
+            logger.error(f"查看访客失败: {e}")
+            yield event.plain_result("查看访客失败，请稍后重试")
 
     async def _get_posts(
         self,
@@ -145,8 +145,8 @@ class QzonePlugin(Star):
                 event.stop_event()
             return posts
         except Exception as e:
-            await event.send(event.plain_result(str(e)))
-            logger.error(e)
+            logger.error(f"查询说说失败: {e}")
+            await event.send(event.plain_result("查询说说失败，请稍后重试"))
             event.stop_event()
             return []
 
@@ -175,8 +175,8 @@ class QzonePlugin(Star):
                 elif self.cfg.trigger.like_when_comment:
                     await self.service.like_posts(post)
             except Exception as e:
-                await event.send(event.plain_result(str(e)))
-                logger.error(e)
+                logger.error(f"评论说说失败: {e}")
+                await event.send(event.plain_result("评论说说失败，请稍后重试"))
 
     @filter.command("赞说说")
     async def like_feed(self, event: AiocqhttpMessageEvent):
@@ -187,8 +187,8 @@ class QzonePlugin(Star):
                 await self.service.like_posts(post)
                 await self.sender.send_post(event, post, message="已点赞")
             except Exception as e:
-                await event.send(event.plain_result(str(e)))
-                logger.error(e)
+                logger.error(f"点赞说说失败: {e}")
+                await event.send(event.plain_result("点赞说说失败，请稍后重试"))
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("发说说")
@@ -201,20 +201,20 @@ class QzonePlugin(Star):
             await self.sender.send_post(event, post, message="已发布")
             event.stop_event()
         except Exception as e:
-            yield event.plain_result(str(e))
-            logger.error(e)
+            logger.error(f"发布说说失败: {e}")
+            yield event.plain_result("发布说说失败，请稍后重试")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("写说说", alias={"写稿"})
     async def write_feed(self, event: AiocqhttpMessageEvent):
-        """写说说 <主题> <图片>, 由AI写完后管理员用‘通过稿件 ID’命令发布"""
+        """写说说 <主题> <图片>, 由AI写完后管理员用'通过稿件 ID'命令发布"""
         group_id = event.get_group_id()
         topic = event.message_str.partition(" ")[2]
         try:
             text = await self.llm.generate_post(group_id=group_id, topic=topic)
         except Exception as e:
-            yield event.plain_result(str(e))
-            logger.error(e)
+            logger.error(f"AI生成说说失败: {e}")
+            yield event.plain_result("AI生成说说失败，请稍后重试")
             return
         images = await get_image_urls(event)
         if not text and not images:
@@ -240,8 +240,8 @@ class QzonePlugin(Star):
                 await self.sender.send_post(event, post, message="已删除说说")
                 await self.service.delete_post(post)
             except Exception as e:
-                await event.send(event.plain_result(str(e)))
-                logger.error(e)
+                logger.error(f"删除说说失败: {e}")
+                await event.send(event.plain_result("删除说说失败，请稍后重试"))
 
     @filter.command("回评", alias={"回复评论"})
     async def reply_comment(
@@ -256,8 +256,8 @@ class QzonePlugin(Star):
             await self.service.reply_comment(post, index=comment_index)
             await self.sender.send_post(event, post, message="已回复评论")
         except Exception as e:
-            await event.send(event.plain_result(str(e)))
-            logger.error(e)
+            logger.error(f"回复评论失败: {e}")
+            yield event.plain_result("回复评论失败，请稍后重试")
 
     @filter.command("投稿")
     async def contribute_post(self, event: AiocqhttpMessageEvent):
@@ -349,8 +349,8 @@ class QzonePlugin(Star):
             return msg + "\n" + post.text + "\n" + "\n".join(post.images)
 
         except Exception as e:
-            logger.error(e)
-            return str(e)
+            logger.error(f"LLM查看说说失败: {e}")
+            return "查看说说失败，请稍后重试"
 
     @filter.llm_tool()
     async def llm_publish_feed(
@@ -371,4 +371,5 @@ class QzonePlugin(Star):
             await self.sender.send_post(event, post, message="已发布")
             return "已发布说说到QQ空间: \n" + post.text + "\n" + "\n".join(post.images)
         except Exception as e:
-            return str(e)
+            logger.error(f"LLM发布说说失败: {e}")
+            return "发布说说失败，请稍后重试"
