@@ -368,8 +368,13 @@ class QzonePlugin(Star):
         images = await get_image_urls(event) if get_image else []
         try:
             post = await self.service.publish_post(text=text, images=images)
-            await self.sender.send_post(event, post, message="已发布")
-            return "已发布说说到QQ空间: \n" + post.text + "\n" + "\n".join(post.images)
+            if not self.cfg.silent_approve:
+                await self.sender.send_post(event, post, message="已发布")
+            img_count = len(post.images)
+            return (
+                f"已发布说说到QQ空间。"
+                + (f" 配图 {img_count} 张。" if img_count else "")
+            )
         except Exception as e:
             logger.error(f"LLM发布说说失败: {e}")
             return "发布说说失败，请稍后重试"
