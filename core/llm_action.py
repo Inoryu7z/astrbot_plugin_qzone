@@ -148,6 +148,13 @@ class LLMAction:
 
             prompt = f"\n[帖子内容]：\n{content}"
 
+            if post.comments:
+                comments_text = "\n".join(
+                    f"- {c.nickname}：{c.content}" for c in post.comments
+                )
+                prompt += f"\n\n[已有评论]：\n{comments_text}"
+                prompt += "\n\n注意：不要与已有评论内容重复，请从不同角度或补充新的观点来评论。"
+
             logger.debug(prompt)
             llm_response = await provider.text_chat(
                 system_prompt=f"{persona}\n\n{self.cfg.llm.comment_prompt}",
