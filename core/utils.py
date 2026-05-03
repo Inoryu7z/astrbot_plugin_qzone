@@ -78,17 +78,19 @@ async def get_image_urls(event: AstrMessageEvent, reply: bool = True) -> list[st
     """获取图片url列表"""
     chain = event.get_messages()
     images: list[str] = []
-    # 遍历引用消息
     if reply:
         reply_seg = next((seg for seg in chain if isinstance(seg, Reply)), None)
         if reply_seg and reply_seg.chain:
             for seg in reply_seg.chain:
-                if isinstance(seg, Image) and seg.url:
-                    images.append(seg.url)
-    # 遍历原始消息
+                if isinstance(seg, Image):
+                    url = seg.url or seg.file
+                    if url:
+                        images.append(url)
     for seg in chain:
-        if isinstance(seg, Image) and seg.url:
-            images.append(seg.url)
+        if isinstance(seg, Image):
+            url = seg.url or seg.file
+            if url:
+                images.append(url)
     return images
 
 

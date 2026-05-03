@@ -1,14 +1,25 @@
-from collections.abc import Sequence
-from typing import Union
+import asyncio
+import base64
+import time
+from pathlib import Path
+from typing import Any, Sequence
 
 import aiohttp
 
 from astrbot.api import logger
 
-BytesOrStr = Union[str, bytes]  # noqa: UP007
+BytesOrStr = str | bytes
+
 
 async def download_file(url: str) -> bytes | None:
     """下载图片"""
+    if url.startswith("file:///"):
+        try:
+            path = url[8:]
+            return await asyncio.to_thread(Path(path).read_bytes)
+        except Exception as e:
+            logger.error(f"本地图片读取失败: {e}")
+            return None
     url = url.replace("https://", "http://")
     try:
         async with aiohttp.ClientSession() as client:
