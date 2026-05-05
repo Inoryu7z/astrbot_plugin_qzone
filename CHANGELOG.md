@@ -1,5 +1,39 @@
 # Changelog
 
+## v3.2.0 (修复版)
+
+重大修复 - 发布说说稳定性全面提升：
+
+- 🔐 **Cookie 刷新机制重构** (`session.py`)：
+  - 新增 `refresh_login()` — 带验证 + 智能重试的强制刷新（最多 3 轮，延迟 2s/5s/8s）
+  - 获取 Cookie 时先尝试 CQHttp 动态获取，失败后兜底使用配置的 `cookies_str`
+  - Cookie 就绪后立即发起轻量验证请求确认可用性
+  - 完善日志：记录 Cookie 来源（CQHttp / 配置 / 手动传入）及关键字段是否存在
+
+- 🔄 **请求层重试增强** (`client.py`)：
+  - 登录失效时使用 `refresh_login()` 替代原来的 `login()`，确保 Cookie 真正刷新
+  - 登录刷新后延迟 2 秒再重试，给 QQ 协议层缓冲时间
+  - 空响应时记录 HTTP 状态码和 URL，便于诊断
+  - 扩展登录失效检测范围（401 + code=-3000 + 403/5xx 中含 -3000）
+
+- 📝 **发说说请求完善** (`api.py`)：
+  - publish 请求新增显式 `Content-Type`、`Referer`、`Origin` 请求头
+  - 保留 `format=json` 参数（已有）
+
+- 🔍 **错误信息增强** (`service.py`)：
+  - 新增 `_retry_with_refresh()` — 每次重试前自动 `invalidate()` 清空缓存 Cookie
+  - 新增 `_build_publish_error()` — 发布失败时输出 code + HTTP 状态 + 具体消息
+  - 不再只输出 `失败：{}`，改为细粒度诊断信息
+
+- 🌐 **User-Agent 更新** (`model.py`)：
+  - Chrome 138 → Chrome 142
+
+- 🐛 **Bug 修复**：
+  - 修复登录失效后 `client.py` 重试时仍使用相同过期 Cookie 的问题
+  - 修复 Service 层三次重试间 Cookie 从不刷新的问题
+
+---
+
 ## v3.1.1
 
 改进：

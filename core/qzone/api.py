@@ -91,6 +91,11 @@ class QzoneAPI(QzoneHttpClient):
             "format": "json",
             "qzreferrer": f"{self.BASE_URL}/{ctx.uin}",
         }
+        headers_override = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Referer": f"{self.BASE_URL}/{ctx.uin}",
+            "Origin": self.BASE_URL,
+        }
         if post.images:
             logger.debug(f"正在上传图片: {post.images}")
             pic_bos, richvals = [], []
@@ -113,6 +118,7 @@ class QzoneAPI(QzoneHttpClient):
             self.EMOTION_URL,
             params={"g_tk": ctx.gtk2, "uin": ctx.uin},
             data=data,
+            headers=headers_override,
         )
         return ApiResponse.from_raw(raw)
 

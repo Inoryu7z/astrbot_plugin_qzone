@@ -1,4 +1,6 @@
+# client.py
 
+import asyncio
 from typing import Any
 
 import aiohttp
@@ -17,6 +19,9 @@ from .constants import (
 )
 from .parser import QzoneParser
 from .session import QzoneSession
+
+RETRY_DELAY_AFTER_LOGIN = 2
+MAX_LOGIN_RETRY_IN_REQUEST = 2
 
 
 class QzoneHttpClient:
@@ -60,22 +65,21 @@ class QzoneHttpClient:
             parsed[QZONE_INTERNAL_META_KEY] = meta
         meta[QZONE_INTERNAL_HTTP_STATUS_KEY] = resp.status
 
-        # 仅在明确登录失效时触发重登
-        if resp.status == HTTP_STATUS_UNAUTHORIZED or parsed.get(
-            "code"
-        ) == QZONE_CODE_LOGIN_EXPIRED:
-            if retry >= 2:
-                raise RuntimeError("登录失效，重试失败")
+        if not text:
+            logger.warning(f"[QQ空间] API 返回空响应体 (HTTP {resp.status}, URL: {url})")
 
-            logger.warning("登录失效，重新登录中")
-            await self.session.login()
+        if _is_login_expired(resp.status, parsed):
+            if retry >= MAX_LOGIN_RETRY_IN_REQUEST:
+                raise RuntimeError(
+                    f"登录失效，已在请求层重试 {retry} 次 (HTTP {resp.status})"
+                )
+
+            logger.warning(f"[QQ空间] 登录态失效 (HTTP {resp.status})，触发 Cookie 刷新流程")
+            await self.session.refresh_login()
+            await asyncio.sleep(RETRY_DELAY_AFTER_LOGIN)
             return await self.request(
-                method,
-                url,
-                params=params,
-                data=data,
-                headers=headers,
-                retry=retry + 1,
+                method, url, params=params, data=data, headers=headers,
+                timeout=timeout, retry=retry + 1,
             )
 
         if resp.status == HTTP_STATUS_FORBIDDEN and parsed.get("code") in (
@@ -86,3 +90,15 @@ class QzoneHttpClient:
             parsed["message"] = QZONE_MSG_PERMISSION_DENIED
 
         return parsed
+
+
+def _is_login_expired(http_status: int, parsed: dict) -> bool:
+    if http_status == HTTP_STATUS_UNAUTHORIZED:
+        return True
+    if http_status in (403, 500, 502, 503):
+        code = parsed.get("code")
+        if code == QZONE_CODE_LOGIN_EXPIRED:
+            return True
+        if isinstance(code, str) and str(code) == str(QZONE_CODE_LOGIN_EXPIRED):
+            return True
+    return parsed.get("code") == QZONE_CODE_LOGIN_EXPIRED

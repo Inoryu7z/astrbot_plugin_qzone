@@ -29,7 +29,7 @@ class QzoneContext:
 
     def headers(self) -> dict[str, str]:
         return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
             "referer": f"https://user.qzone.qq.com/{self.uin}",
             "origin": "https://user.qzone.qq.com",
             "Host": "user.qzone.qq.com",

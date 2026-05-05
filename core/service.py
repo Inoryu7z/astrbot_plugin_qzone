@@ -1,3 +1,5 @@
+# service.py
+
 import asyncio
 import time
 from typing import Any
@@ -39,10 +41,47 @@ async def _retry(func, *args, name: str = "", **kwargs):
     raise last_error
 
 
+async def _retry_with_refresh(func, session: QzoneSession, *args, name: str = "", **kwargs):
+    last_error = None
+    for i, delay in enumerate(RETRY_DELAYS):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            if i < len(RETRY_DELAYS) - 1:
+                logger.warning(
+                    f"{name} 失败，{delay}秒后刷新 Cookie 并重试 ({i + 1}/{len(RETRY_DELAYS)}): {e}"
+                )
+                await asyncio.sleep(delay)
+                await session.invalidate()
+    raise last_error
+
+
+def _build_publish_error(resp: Any) -> str:
+    code = getattr(resp, 'code', None) if hasattr(resp, 'code') else resp.get('code') if isinstance(resp, dict) else None
+    message = getattr(resp, 'message', None) if hasattr(resp, 'message') else resp.get('message') if isinstance(resp, dict) else None
+    http_status = None
+    raw = getattr(resp, 'raw', {}) if hasattr(resp, 'raw') else resp.get('raw', {}) if isinstance(resp, dict) else {}
+    if isinstance(raw, dict):
+        meta = raw.get(QZONE_INTERNAL_META_KEY, {})
+        if isinstance(meta, dict):
+            http_status = meta.get(QZONE_INTERNAL_HTTP_STATUS_KEY)
+
+    parts = []
+    if code is not None and code != 0:
+        parts.append(f"code={code}")
+    if http_status is not None:
+        parts.append(f"HTTP {http_status}")
+    if message and message != QZONE_MSG_EMPTY_RESPONSE:
+        parts.append(str(message))
+
+    if not parts:
+        return "发布说说失败：服务器返回空响应，请检查登录态"
+
+    return f"发布说说失败：{', '.join(parts)}"
+
+
 class PostService:
-    """
-    Application Service 层
-    """
 
     def __init__(
         self,
@@ -55,10 +94,6 @@ class PostService:
         self.session = session
         self.db = db
         self.llm = llm
-
-    # ============================================================
-    # 业务接口
-    # ============================================================
 
     async def query_feeds(
         self,
@@ -205,7 +240,6 @@ class PostService:
             if await self._has_saved_self_comment(post, uin):
                 continue
 
-            # 如果已经有 comments，说明是 detail post
             if not post.comments:
                 resp = await self.qzone.get_detail(post)
                 if not resp.ok or not resp.data:
@@ -222,10 +256,7 @@ class PostService:
 
         return result
 
-    # ==================== 对外接口 ========================
-
     async def view_visitor(self) -> str:
-        """查看访客"""
         resp = await self.qzone.get_visitor()
         if not resp.ok:
             raise RuntimeError(f"获取访客异常：{resp.data}")
@@ -234,15 +265,12 @@ class PostService:
         return QzoneParser.parse_visitors(resp.data)
 
     async def like_posts(self, post: Post):
-        """点赞帖子"""
         if not post.tid:
             raise ValueError("帖子 tid 为空")
         await _retry(self.qzone.like, post, name="点赞")
         logger.info(f"已点赞 → {post.name}")
 
-
     async def comment_posts(self, post: Post):
-        """评论帖子"""
         if not post.tid:
             raise ValueError("帖子 tid 为空")
 
@@ -268,37 +296,31 @@ class PostService:
         logger.info(f"评论 → {post.name}")
 
     async def reply_comment(self, post: Post, index: int):
-        """回复评论（自动排除自己的评论）"""
 
         if not post.tid:
             raise ValueError("帖子 tid 为空")
 
         uin = await self.session.get_uin()
 
-        # 排除自己的评论
         other_comments = [c for c in post.comments if c.uin != uin]
         n = len(other_comments)
 
         if n == 0:
             raise ValueError("没有可回复的评论")
 
-        # 校验索引（基于过滤后的列表）
         if not (-n <= index < n):
             raise ValueError(f"索引越界, 当前仅有 {n} 条可回复评论")
 
         comment = other_comments[index]
 
-        # 生成回复
         content = await self.llm.generate_reply(post, comment)
         if not content:
             raise ValueError("生成回复内容为空")
 
-        # 发回复
         resp = await _retry(self.qzone.reply, post, comment, content, name="回复评论")
         if not resp.ok:
             raise RuntimeError(resp.message)
 
-        # 本地回填
         name = await self.session.get_nickname()
         post.comments.append(
             Comment(
@@ -318,13 +340,10 @@ class PostService:
         text: str | None = None,
         images: list | None = None,
     ) -> Post:
-        """发表帖子（支持 Post / text / images，但不能为空）"""
 
-        # 参数校验
         if post is None and not text and not images:
             raise ValueError("post、text、images 不能同时为空")
 
-        # 如果没传 post，就自动构造一个
         if post is None:
             uin = await self.session.get_uin()
             name = await self.session.get_nickname()
@@ -335,25 +354,22 @@ class PostService:
                 images=images or [],
             )
 
-        # 发布前验证登录态
         await _retry(self.qzone.get_visitor, name="登录态预检")
 
-        # 发布
-        resp = await _retry(self.qzone.publish, post, name="发布说说")
+        resp = await _retry_with_refresh(
+            self.qzone.publish, self.session, post, name="发布说说"
+        )
         if not resp.ok:
-            raise RuntimeError(f"发布说说失败：{resp.data}")
+            raise RuntimeError(_build_publish_error(resp))
 
-        # 回填发布结果
         post.tid = resp.data.get("tid")
         post.status = "approved"
         post.create_time = resp.data.get("now", post.create_time)
 
-        # 持久化
         await self.db.save(post)
         return post
 
     async def delete_post(self, post: Post):
-        """删除帖子"""
         if not post.tid:
             raise ValueError("帖子 tid 为空")
         await _retry(self.qzone.delete, post.tid, name="删除说说")
