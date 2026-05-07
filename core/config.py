@@ -164,11 +164,18 @@ class PluginConfig(ConfigNode):
         self.db_path = self.data_dir / f"posts_{self._DB_VERSION}.db"
 
         self.default_style_dir = Path(__file__).resolve().parent.parent / "default_style"
-        self.style_dir = (
-            Path(self.pillowmd_style_dir).resolve()
-            if self.pillowmd_style_dir
-            else self.default_style_dir
-        )
+        if self.pillowmd_style_dir:
+            p = Path(self.pillowmd_style_dir)
+            if not p.is_absolute():
+                p = Path(__file__).resolve().parent.parent / p
+            p = p.resolve()
+            if p.exists():
+                self.style_dir = p
+            else:
+                logger.warning(f"pillowmd 样式目录不存在: {p}，改用默认样式")
+                self.style_dir = self.default_style_dir
+        else:
+            self.style_dir = self.default_style_dir
 
         tz = context.get_config().get("timezone")
         self.timezone = (
