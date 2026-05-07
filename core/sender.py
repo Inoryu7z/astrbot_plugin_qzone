@@ -19,13 +19,20 @@ class Sender:
         self._load_renderer()
 
     def _load_renderer(self):
-        # 实例化pillowmd样式
         try:
             import pillowmd
 
-            self.style = pillowmd.LoadMarkdownStyles(self.cfg.style_dir)
+            style_dir = self.cfg.style_dir
+            logger.info(f"[pillowmd] 样式目录: {style_dir}")
+            if style_dir.exists():
+                contents = sorted(p.name for p in style_dir.iterdir())
+                logger.info(f"[pillowmd] 目录内容: {contents}")
+            else:
+                logger.warning(f"[pillowmd] 样式目录不存在: {style_dir}")
+            self.style = pillowmd.LoadMarkdownStyles(style_dir)
+            logger.info("[pillowmd] 样式加载成功")
         except Exception as e:
-            logger.error(f"无法加载pillowmd样式：{e}")
+            logger.warning(f"[pillowmd] 样式加载失败（将使用纯文本渲染）: {e}")
 
     async def _post_to_seg(self, post: Post) -> BaseMessageComponent:
         post_text = post.to_str()
