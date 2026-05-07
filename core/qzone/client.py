@@ -47,12 +47,15 @@ class QzoneHttpClient:
         retry: int = 0,
     ) -> dict[str, Any]:
         ctx = await self.session.get_ctx()
+        merged_headers = dict(ctx.headers())
+        if headers:
+            merged_headers.update(headers)
         async with self._session.request(
             method,
             url,
             params=params,
             data=data,
-            headers=headers or ctx.headers(),
+            headers=merged_headers,
             cookies=ctx.cookies(),
             timeout=timeout,
         ) as resp:
@@ -67,6 +70,14 @@ class QzoneHttpClient:
 
         if not text:
             logger.warning(f"[QQ空间] API 返回空响应体 (HTTP {resp.status}, URL: {url})")
+            if retry < MAX_LOGIN_RETRY_IN_REQUEST:
+                logger.info(f"[QQ空间] 空响应重试 ({retry + 1}/{MAX_LOGIN_RETRY_IN_REQUEST})，刷新登录态...")
+                await self.session.refresh_login()
+                await asyncio.sleep(RETRY_DELAY_AFTER_LOGIN)
+                return await self.request(
+                    method, url, params=params, data=data, headers=headers,
+                    timeout=timeout, retry=retry + 1,
+                )
 
         if _is_login_expired(resp.status, parsed):
             if retry >= MAX_LOGIN_RETRY_IN_REQUEST:

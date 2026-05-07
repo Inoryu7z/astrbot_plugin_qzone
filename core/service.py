@@ -45,7 +45,12 @@ async def _retry_with_refresh(func, session: QzoneSession, *args, name: str = ""
     last_error = None
     for i, delay in enumerate(RETRY_DELAYS):
         try:
-            return await func(*args, **kwargs)
+            result = await func(*args, **kwargs)
+            if hasattr(result, 'ok') and not result.ok:
+                code = getattr(result, 'code', None)
+                message = getattr(result, 'message', None) or ''
+                raise RuntimeError(f"API 返回失败 (code={code}, message={message})")
+            return result
         except Exception as e:
             last_error = e
             if i < len(RETRY_DELAYS) - 1:
