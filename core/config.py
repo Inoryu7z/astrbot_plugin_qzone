@@ -13,9 +13,6 @@ from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.core.star.context import Context
 from astrbot.core.star.star_tools import StarTools
-from astrbot.core.utils.astrbot_path import get_astrbot_plugin_path
-
-
 class ConfigNode:
     """
     配置节点, 把 dict 变成强类型对象。
@@ -166,9 +163,7 @@ class PluginConfig(ConfigNode):
 
         self.db_path = self.data_dir / f"posts_{self._DB_VERSION}.db"
 
-        self.default_style_dir = (
-            Path(get_astrbot_plugin_path()) / "astrbot_plugin_qzone" / "default_style"
-        )
+        self.default_style_dir = Path(__file__).resolve().parent.parent / "default_style"
         self.style_dir = (
             Path(self.pillowmd_style_dir).resolve()
             if self.pillowmd_style_dir
