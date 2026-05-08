@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.2.2
+
+修复：
+- 图片上传增加单张3次重试（间隔递增2s/4s），单张失败后跳过继续上传其余图片，仅全部失败才抛异常（原行为：任何一张失败直接导致整条说说发布失败）
+- `parse_upload_result` 解析失败也纳入重试范围
+- 修复 `client.py` 中 `timeout` 参数传入 `int` 导致 `aiohttp.ClientTimeout` 类型不匹配（`_upload_image` 的 `timeout=60` 实际无效）
+
+
 ## v3.2.1
 
 修复：

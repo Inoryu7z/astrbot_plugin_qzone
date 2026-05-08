@@ -89,20 +89,35 @@ class QzoneParser:
 
     @staticmethod
     def parse_upload_result(payload: dict[str, Any]) -> tuple[str, str]:
-        data = payload["data"]
-        picbo = data["url"].split("&bo=", 1)[1]
-
-        richval = ",{},{},{},{},{},{},,{},{}".format(
-            data["albumid"],
-            data["lloc"],
-            data["sloc"],
-            data["type"],
-            data["height"],
-            data["width"],
-            data["height"],
-            data["width"],
-        )
-        return picbo, richval
+        try:
+            data = payload.get("data")
+            if not data or not isinstance(data, dict):
+                raise RuntimeError(f"上传响应缺少 data 字段: {list(payload.keys())}")
+            url = data.get("url", "")
+            if not url:
+                raise RuntimeError(f"上传响应 data 缺少 url 字段: {list(data.keys())}")
+            bo_part = url.split("&bo=", 1)
+            if len(bo_part) < 2 or not bo_part[1]:
+                raise RuntimeError(f"上传响应 url 缺少 bo 参数: {url[:100]}")
+            picbo = bo_part[1]
+            for key in ("albumid", "lloc", "sloc", "type", "height", "width"):
+                if key not in data:
+                    raise RuntimeError(f"上传响应 data 缺少 {key} 字段: {list(data.keys())}")
+            richval = ",{},{},{},{},{},{},,{},{}".format(
+                data["albumid"],
+                data["lloc"],
+                data["sloc"],
+                data["type"],
+                data["height"],
+                data["width"],
+                data["height"],
+                data["width"],
+            )
+            return picbo, richval
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"解析上传结果失败: {e}, payload_keys={list(payload.keys())}") from e
 
     @staticmethod
     def parse_visitors(data: dict[str, Any]) -> str:

@@ -50,6 +50,7 @@ class QzoneHttpClient:
         merged_headers = dict(ctx.headers())
         if headers:
             merged_headers.update(headers)
+        req_timeout = aiohttp.ClientTimeout(total=timeout) if timeout is not None else None
         async with self._session.request(
             method,
             url,
@@ -57,7 +58,7 @@ class QzoneHttpClient:
             data=data,
             headers=merged_headers,
             cookies=ctx.cookies(),
-            timeout=timeout,
+            timeout=req_timeout,
         ) as resp:
             text = await resp.text()
 

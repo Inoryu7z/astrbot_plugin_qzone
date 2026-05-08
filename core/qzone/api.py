@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import time
 from typing import Any
@@ -100,13 +101,27 @@ class QzoneAPI(QzoneHttpClient):
             logger.debug(f"正在上传图片: {post.images}")
             pic_bos, richvals = [], []
             imgs: list[bytes] = await normalize_images(post.images)
-            for img in imgs:
-                resp = await self._upload_image(img)
-                if not resp.ok:
-                    raise RuntimeError(f"上传图片失败: {resp.message}")
-                picbo, richval = QzoneParser.parse_upload_result(resp.data)
-                pic_bos.append(picbo)
-                richvals.append(richval)
+            for idx, img in enumerate(imgs):
+                uploaded = False
+                for attempt in range(3):
+                    resp = await self._upload_image(img)
+                    if resp.ok:
+                        try:
+                            picbo, richval = QzoneParser.parse_upload_result(resp.data)
+                            pic_bos.append(picbo)
+                            richvals.append(richval)
+                            uploaded = True
+                            break
+                        except RuntimeError as e:
+                            logger.warning(f"解析第 {idx + 1} 张图片上传结果失败(第{attempt + 1}次): {e}")
+                    else:
+                        logger.warning(f"上传第 {idx + 1}/{len(imgs)} 张图片失败(第{attempt + 1}次): {resp.message}")
+                    if attempt < 2:
+                        await asyncio.sleep(2 * (attempt + 1))
+                if not uploaded:
+                    logger.warning(f"第 {idx + 1}/{len(imgs)} 张图片上传全部重试失败，跳过该图片")
+            if not pic_bos:
+                raise RuntimeError("所有图片上传均失败，无法发布说说")
             data.update(
                 pic_bo=",".join(pic_bos),
                 richtype="1",

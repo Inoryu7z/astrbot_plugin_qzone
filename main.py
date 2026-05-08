@@ -15,6 +15,7 @@ from .core.db import PostDB
 from .core.llm_action import LLMAction
 from .core.model import Post
 from .core.qzone import QzoneAPI, QzoneSession
+from .core.qzone.utils import close_shared_session
 from .core.scheduler import AutoComment, AutoPublish
 from .core.sender import Sender
 from .core.service import PostService
@@ -59,6 +60,7 @@ class QzonePlugin(Star):
         """插件卸载时"""
         if self.qzone:
             await self.qzone.close()
+        await close_shared_session()
         if self.auto_comment:
             await self.auto_comment.terminate()
         if self.auto_publish:

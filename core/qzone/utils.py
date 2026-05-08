@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import time
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import unquote
@@ -10,6 +9,17 @@ import aiohttp
 from astrbot.api import logger
 
 BytesOrStr = str | bytes
+
+_shared_session: aiohttp.ClientSession | None = None
+
+
+async def _get_shared_session() -> aiohttp.ClientSession:
+    global _shared_session
+    if _shared_session is None or _shared_session.closed:
+        _shared_session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30)
+        )
+    return _shared_session
 
 
 async def download_file(url: str) -> bytes | None:
@@ -21,14 +31,24 @@ async def download_file(url: str) -> bytes | None:
         except Exception as e:
             logger.error(f"本地图片读取失败: {e}")
             return None
-    url = url.replace("https://", "http://")
     try:
-        async with aiohttp.ClientSession() as client:
-            response = await client.get(url)
+        session = await _get_shared_session()
+        async with session.get(url) as response:
+            if response.status != 200:
+                logger.error(f"图片下载失败: HTTP {response.status}, url={url[:100]}")
+                return None
             img_bytes = await response.read()
             return img_bytes
     except Exception as e:
         logger.error(f"图片下载失败: {e}")
+        return None
+
+
+async def close_shared_session() -> None:
+    global _shared_session
+    if _shared_session and not _shared_session.closed:
+        await _shared_session.close()
+    _shared_session = None
 
 
 async def normalize_images(images: Sequence[BytesOrStr] | None) -> list[bytes]:
