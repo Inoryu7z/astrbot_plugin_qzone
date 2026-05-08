@@ -3,6 +3,7 @@ import base64
 import time
 from pathlib import Path
 from typing import Any, Sequence
+from urllib.parse import unquote
 
 import aiohttp
 
@@ -15,7 +16,7 @@ async def download_file(url: str) -> bytes | None:
     """下载图片"""
     if url.startswith("file:///"):
         try:
-            path = url[8:]
+            path = unquote(url[8:])
             return await asyncio.to_thread(Path(path).read_bytes)
         except Exception as e:
             logger.error(f"本地图片读取失败: {e}")
