@@ -1,7 +1,10 @@
 import asyncio
 import base64
 import time
+import uuid
 from typing import Any
+
+import aiohttp
 
 from astrbot.api import logger
 
@@ -33,30 +36,54 @@ class QzoneAPI(QzoneHttpClient):
         super().__init__(session, config)
 
     async def _upload_image(self, image: bytes) -> ApiResponse:
-        """上传单张图片 (本接口较为脆弱)"""
+        """上传单张图片 (multipart/form-data)"""
         ctx = await self.session.get_ctx()
-        raw = await self.request(
-            "POST",
-            self.UPLOAD_IMAGE_URL,
-            data={
-                "filename": "filename",
-                "uploadtype": "1",
-                "albumtype": "7",
-                "skey": ctx.skey,
-                "uin": ctx.uin,
-                "p_skey": ctx.p_skey,
-                "output_type": "json",
-                "base64": "1",
-                "picfile": base64.b64encode(image).decode(),
-            },
-            headers={
-                "referer": f"{self.BASE_URL}/{ctx.uin}",
-                "origin": self.BASE_URL,
-            },
-            timeout=60,
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
+        b64_data = base64.b64encode(image).decode()
+        parts: list[bytes] = []
+        form_fields: list[tuple[str, str]] = [
+            ("filename", "filename"),
+            ("uploadtype", "1"),
+            ("albumtype", "7"),
+            ("skey", ctx.skey),
+            ("uin", str(ctx.uin)),
+            ("p_skey", ctx.p_skey),
+            ("output_type", "json"),
+            ("base64", "1"),
+            ("refer", "shuoshuo"),
+        ]
+        for name, value in form_fields:
+            parts.append(
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n".encode()
+            )
+        parts.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="picfile"\r\n\r\n'
+            f"{b64_data}\r\n".encode()
         )
-        logger.debug(raw)
-        return ApiResponse.from_raw(raw, code_key="ret", msg_key="msg")
+        parts.append(f"--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+        merged_headers = dict(ctx.headers())
+        merged_headers.update({
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "referer": f"{self.BASE_URL}/{ctx.uin}",
+            "origin": self.BASE_URL,
+        })
+        req_timeout = aiohttp.ClientTimeout(total=60)
+        async with self._session.post(
+            self.UPLOAD_IMAGE_URL,
+            params={"g_tk": ctx.gtk2},
+            data=body,
+            headers=merged_headers,
+            cookies=ctx.cookies(),
+            timeout=req_timeout,
+        ) as resp:
+            text = await resp.text()
+        parsed = QzoneParser.parse_response(text)
+        logger.debug(parsed)
+        return ApiResponse.from_raw(parsed, code_key="ret", msg_key="msg")
 
     async def get_visitor(self) -> ApiResponse:
         """获取访客数"""
