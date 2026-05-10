@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.2.3
+
+修复：
+- 移除 `QzoneContext.headers()` 中硬编码的 `Host` 和 `Connection` 字段，改由 aiohttp 根据请求 URL 自动设置正确的 Host（根因：上传接口域名 `up.qzone.qq.com` 与硬编码的 `user.qzone.qq.com` 不匹配，导致服务器拒绝请求返回非 JSON 响应，触发"响应内容缺少 JSON 片段"和后续 Broken pipe 连锁失败）
+- 图片上传循环增加网络异常捕获（`aiohttp.ClientError` / `OSError` / `ConnectionError`），网络中断时重试而非直接崩溃
+- 上传接口增加调试日志（HTTP 状态码、响应长度、前200字符），便于排查
+
+
 ## v3.2.2
 
 修复：

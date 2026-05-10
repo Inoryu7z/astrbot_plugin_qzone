@@ -81,6 +81,7 @@ class QzoneAPI(QzoneHttpClient):
             timeout=req_timeout,
         ) as resp:
             text = await resp.text()
+        logger.debug(f"上传图片响应: HTTP {resp.status}, 长度={len(text)}, 前200字={text[:200]}")
         parsed = QzoneParser.parse_response(text)
         logger.debug(parsed)
         return ApiResponse.from_raw(parsed, code_key="ret", msg_key="msg")
@@ -131,7 +132,13 @@ class QzoneAPI(QzoneHttpClient):
             for idx, img in enumerate(imgs):
                 uploaded = False
                 for attempt in range(3):
-                    resp = await self._upload_image(img)
+                    try:
+                        resp = await self._upload_image(img)
+                    except (aiohttp.ClientError, OSError, ConnectionError) as e:
+                        logger.warning(f"上传第 {idx + 1}/{len(imgs)} 张图片网络异常(第{attempt + 1}次): {e}")
+                        if attempt < 2:
+                            await asyncio.sleep(2 * (attempt + 1))
+                        continue
                     if resp.ok:
                         try:
                             picbo, richval = QzoneParser.parse_upload_result(resp.data)
