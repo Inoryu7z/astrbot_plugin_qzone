@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.2.4
+
+修复：
+- `normalize_images` 下载/接收图片后自动检测格式，如为 QQ 空间不支持的格式（如 WebP、TIFF 等）则自动转换为 JPEG 后再上传
+
+
 ## v3.2.3
 
 修复：

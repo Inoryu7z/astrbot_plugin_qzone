@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import io
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import unquote, urlparse
@@ -11,6 +12,37 @@ from astrbot.api import logger
 BytesOrStr = str | bytes
 
 _shared_session: aiohttp.ClientSession | None = None
+
+_QZONE_SUPPORTED_FORMATS = {"JPEG", "PNG", "GIF", "BMP"}
+
+
+def _convert_to_supported_format(img_bytes: bytes) -> bytes:
+    """检测图片格式，如果不被QQ空间支持则转换为JPEG"""
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(img_bytes))
+        fmt = img.format
+
+        if fmt in _QZONE_SUPPORTED_FORMATS:
+            return img_bytes
+
+        logger.info(f"图片格式 {fmt} 不被QQ空间支持，转换为JPEG")
+        if img.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            background.paste(img, mask=img.split()[-1] if "A" in img.mode else None)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"图片格式转换失败，使用原图: {e}")
+        return img_bytes
 
 
 async def _get_shared_session() -> aiohttp.ClientSession:
@@ -64,11 +96,11 @@ async def normalize_images(images: Sequence[BytesOrStr] | None) -> list[bytes]:
     cleaned: list[bytes] = []
     for item in images:
         if isinstance(item, bytes):
-            cleaned.append(item)
+            cleaned.append(_convert_to_supported_format(item))
         elif isinstance(item, str):
             file = await download_file(item)
             if file is not None:
-                cleaned.append(file)
+                cleaned.append(_convert_to_supported_format(file))
         else:
             raise TypeError(f"image 必须是 str 或 bytes，收到 {type(item)}")
     return cleaned
