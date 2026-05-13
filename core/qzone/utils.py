@@ -23,6 +23,7 @@ def _convert_to_supported_format(img_bytes: bytes) -> bytes:
 
         img = Image.open(io.BytesIO(img_bytes))
         fmt = img.format
+        logger.debug(f"检测到图片格式: {fmt}, 模式: {img.mode}")
 
         if fmt in _QZONE_SUPPORTED_FORMATS:
             return img_bytes
@@ -39,10 +40,30 @@ def _convert_to_supported_format(img_bytes: bytes) -> bytes:
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=95)
-        return buf.getvalue()
+        result = buf.getvalue()
+        logger.info(f"图片格式转换成功: {fmt} -> JPEG, 原始大小={len(img_bytes)} bytes, 转换后大小={len(result)} bytes")
+        return result
     except Exception as e:
-        logger.warning(f"图片格式转换失败，使用原图: {e}")
-        return img_bytes
+        logger.error(f"图片格式转换失败: {e}, 尝试强制转换为JPEG")
+        try:
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_bytes))
+            if img.mode in ("RGBA", "LA", "P"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                background.paste(img, mask=img.split()[-1] if "A" in img.mode else None)
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=95)
+            result = buf.getvalue()
+            logger.info(f"强制转换成功: 大小={len(result)} bytes")
+            return result
+        except Exception as e2:
+            logger.error(f"强制转换也失败: {e2}, 返回原图（可能导致QQ空间上传失败）")
+            return img_bytes
 
 
 async def _get_shared_session() -> aiohttp.ClientSession:
