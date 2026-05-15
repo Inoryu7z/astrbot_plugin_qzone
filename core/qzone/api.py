@@ -35,14 +35,27 @@ class QzoneAPI(QzoneHttpClient):
     def __init__(self, session: QzoneSession, config: PluginConfig):
         super().__init__(session, config)
 
+    @staticmethod
+    def _detect_image_ext(data: bytes) -> str:
+        if len(data) >= 3 and data[0:3] == b"\xff\xd8\xff":
+            return "jpg"
+        if len(data) >= 8 and data[0:8] == b"\x89PNG\r\n\x1a\n":
+            return "png"
+        if len(data) >= 6 and (data[0:6] == b"GIF87a" or data[0:6] == b"GIF89a"):
+            return "gif"
+        if len(data) >= 2 and data[0:2] == b"BM":
+            return "bmp"
+        return "jpg"
+
     async def _upload_image(self, image: bytes) -> ApiResponse:
         """上传单张图片 (multipart/form-data)"""
         ctx = await self.session.get_ctx()
         boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
         b64_data = base64.b64encode(image).decode()
+        ext = self._detect_image_ext(image)
         parts: list[bytes] = []
         form_fields: list[tuple[str, str]] = [
-            ("filename", "filename"),
+            ("filename", f"image.{ext}"),
             ("uploadtype", "1"),
             ("albumtype", "7"),
             ("skey", ctx.skey),
@@ -60,7 +73,7 @@ class QzoneAPI(QzoneHttpClient):
             )
         parts.append(
             f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="picfile"\r\n\r\n'
+            f'Content-Disposition: form-data; name="picfile"; filename="image.{ext}"\r\n\r\n'
             f"{b64_data}\r\n".encode()
         )
         parts.append(f"--{boundary}--\r\n".encode())
