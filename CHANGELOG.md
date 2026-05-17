@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.2.5
+
+修复：
+- `_convert_to_supported_format` 增加色彩模式检查：已支持格式（JPEG/PNG/GIF/BMP）若色彩模式非 RGB/L（如 CMYK/RGBA/YCCK/P），也会重新编码为 baseline RGB JPEG 后再上传
+- `_upload_image` multipart `picfile` 部分新增 `Content-Type` 头（如 `image/jpeg`），与浏览器上传行为一致
+
+
 ## v3.2.4
 
 修复：

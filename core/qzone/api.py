@@ -71,9 +71,12 @@ class QzoneAPI(QzoneHttpClient):
                 f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
                 f"{value}\r\n".encode()
             )
+        _MIME_MAP = {"jpg": "image/jpeg", "png": "image/png", "gif": "image/gif", "bmp": "image/bmp"}
+        pic_mime = _MIME_MAP.get(ext, "image/jpeg")
         parts.append(
             f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="picfile"; filename="image.{ext}"\r\n\r\n'
+            f'Content-Disposition: form-data; name="picfile"; filename="image.{ext}"\r\n'
+            f"Content-Type: {pic_mime}\r\n\r\n"
             f"{b64_data}\r\n".encode()
         )
         parts.append(f"--{boundary}--\r\n".encode())

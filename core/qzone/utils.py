@@ -17,31 +17,40 @@ _QZONE_SUPPORTED_FORMATS = {"JPEG", "PNG", "GIF", "BMP"}
 
 
 def _convert_to_supported_format(img_bytes: bytes) -> bytes:
-    """检测图片格式，如果不被QQ空间支持则转换为JPEG"""
+    """检测图片格式，如果不被QQ空间支持则转换为JPEG；对已支持格式检查色彩模式"""
     try:
         from PIL import Image
 
         img = Image.open(io.BytesIO(img_bytes))
         fmt = img.format
-        logger.debug(f"检测到图片格式: {fmt}, 模式: {img.mode}")
+        mode = img.mode
+        logger.debug(f"检测到图片格式: {fmt}, 模式: {mode}")
 
-        if fmt in _QZONE_SUPPORTED_FORMATS:
+        need_reencode = False
+
+        if fmt not in _QZONE_SUPPORTED_FORMATS:
+            logger.info(f"图片格式 {fmt} 不被QQ空间支持，转换为JPEG")
+            need_reencode = True
+        elif mode not in ("RGB", "L"):
+            logger.info(f"图片格式 {fmt} 色彩模式 {mode} 不兼容，重新编码为RGB JPEG")
+            need_reencode = True
+
+        if not need_reencode:
             return img_bytes
 
-        logger.info(f"图片格式 {fmt} 不被QQ空间支持，转换为JPEG")
-        if img.mode in ("RGBA", "LA", "P"):
+        if mode in ("RGBA", "LA", "P"):
             background = Image.new("RGB", img.size, (255, 255, 255))
-            if img.mode == "P":
+            if mode == "P":
                 img = img.convert("RGBA")
             background.paste(img, mask=img.split()[-1] if "A" in img.mode else None)
             img = background
-        elif img.mode != "RGB":
+        elif mode != "RGB":
             img = img.convert("RGB")
 
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=95)
+        img.save(buf, format="JPEG", quality=95, progressive=False)
         result = buf.getvalue()
-        logger.info(f"图片格式转换成功: {fmt} -> JPEG, 原始大小={len(img_bytes)} bytes, 转换后大小={len(result)} bytes")
+        logger.info(f"图片重新编码成功: {fmt}/{mode} -> RGB JPEG, 原始大小={len(img_bytes)} bytes, 编码后大小={len(result)} bytes")
         return result
     except Exception as e:
         logger.error(f"图片格式转换失败: {e}, 尝试强制转换为JPEG")
@@ -57,7 +66,7 @@ def _convert_to_supported_format(img_bytes: bytes) -> bytes:
             elif img.mode != "RGB":
                 img = img.convert("RGB")
             buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=95)
+            img.save(buf, format="JPEG", quality=95, progressive=False)
             result = buf.getvalue()
             logger.info(f"强制转换成功: 大小={len(result)} bytes")
             return result
