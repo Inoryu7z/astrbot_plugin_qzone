@@ -117,7 +117,7 @@ class Post(pydantic.BaseModel):
     """群聊ID"""
     text: str = ""
     """文本内容"""
-    images: list[str] = pydantic.Field(default_factory=list)
+    images: list[str | bytes] = pydantic.Field(default_factory=list)
     """图片列表"""
     videos: list[str] = pydantic.Field(default_factory=list)
     """视频列表"""
@@ -156,7 +156,10 @@ class Post(pydantic.BaseModel):
         if self.rt_con:
             lines.append(f"\n\n[转发]：{remove_em_tags(self.rt_con)}\n\n")
         if self.images:
-            images_str = "\n".join(f"  ![图片]({img})" for img in self.images)
+            images_str = "\n".join(
+                f"  ![图片]({img})" if isinstance(img, str) else "  [二进制图片]"
+                for img in self.images
+            )
             lines.append(images_str)
         if self.videos:
             videos_str = "\n".join(f"  [视频]({vid})" for vid in self.videos)

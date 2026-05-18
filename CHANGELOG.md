@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.2.6
+
+修复：
+- `Post.images` 字段类型从 `list[str]` 改为 `list[str | bytes]`，支持 aiimg 等插件直接传递 bytes 图片数据（之前 Pydantic 验证拒绝 bytes 输入导致发布失败）
+
+
 ## v3.2.5
 
 修复：
