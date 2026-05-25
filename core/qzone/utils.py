@@ -86,6 +86,7 @@ async def _get_shared_session() -> aiohttp.ClientSession:
 
 async def download_file(url: str) -> bytes | None:
     """下载图片"""
+    url = url.replace("https://", "http://")
     if url.startswith("file:///"):
         try:
             path = unquote(urlparse(url).path)

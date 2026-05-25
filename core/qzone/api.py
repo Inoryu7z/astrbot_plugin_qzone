@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import time
-import uuid
 from typing import Any
 
 import aiohttp
@@ -35,72 +34,31 @@ class QzoneAPI(QzoneHttpClient):
     def __init__(self, session: QzoneSession, config: PluginConfig):
         super().__init__(session, config)
 
-    @staticmethod
-    def _detect_image_ext(data: bytes) -> str:
-        if len(data) >= 3 and data[0:3] == b"\xff\xd8\xff":
-            return "jpg"
-        if len(data) >= 8 and data[0:8] == b"\x89PNG\r\n\x1a\n":
-            return "png"
-        if len(data) >= 6 and (data[0:6] == b"GIF87a" or data[0:6] == b"GIF89a"):
-            return "gif"
-        if len(data) >= 2 and data[0:2] == b"BM":
-            return "bmp"
-        return "jpg"
-
     async def _upload_image(self, image: bytes) -> ApiResponse:
-        """上传单张图片 (multipart/form-data)"""
+        """上传单张图片 (application/x-www-form-urlencoded + base64)"""
         ctx = await self.session.get_ctx()
-        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
-        b64_data = base64.b64encode(image).decode()
-        ext = self._detect_image_ext(image)
-        parts: list[bytes] = []
-        form_fields: list[tuple[str, str]] = [
-            ("filename", f"image.{ext}"),
-            ("uploadtype", "1"),
-            ("albumtype", "7"),
-            ("skey", ctx.skey),
-            ("uin", str(ctx.uin)),
-            ("p_skey", ctx.p_skey),
-            ("output_type", "json"),
-            ("base64", "1"),
-            ("refer", "shuoshuo"),
-        ]
-        for name, value in form_fields:
-            parts.append(
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
-                f"{value}\r\n".encode()
-            )
-        _MIME_MAP = {"jpg": "image/jpeg", "png": "image/png", "gif": "image/gif", "bmp": "image/bmp"}
-        pic_mime = _MIME_MAP.get(ext, "image/jpeg")
-        parts.append(
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="picfile"; filename="image.{ext}"\r\n'
-            f"Content-Type: {pic_mime}\r\n\r\n"
-            f"{b64_data}\r\n".encode()
-        )
-        parts.append(f"--{boundary}--\r\n".encode())
-        body = b"".join(parts)
-        merged_headers = dict(ctx.headers())
-        merged_headers.update({
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "referer": f"{self.BASE_URL}/{ctx.uin}",
-            "origin": self.BASE_URL,
-        })
-        req_timeout = aiohttp.ClientTimeout(total=60)
-        async with self._session.post(
+        raw = await self.request(
+            "POST",
             self.UPLOAD_IMAGE_URL,
-            params={"g_tk": ctx.gtk2},
-            data=body,
-            headers=merged_headers,
-            cookies=ctx.cookies(),
-            timeout=req_timeout,
-        ) as resp:
-            text = await resp.text()
-        logger.debug(f"上传图片响应: HTTP {resp.status}, 长度={len(text)}, 前200字={text[:200]}")
-        parsed = QzoneParser.parse_response(text)
-        logger.debug(parsed)
-        return ApiResponse.from_raw(parsed, code_key="ret", msg_key="msg")
+            data={
+                "filename": "filename",
+                "uploadtype": "1",
+                "albumtype": "7",
+                "skey": ctx.skey,
+                "uin": ctx.uin,
+                "p_skey": ctx.p_skey,
+                "output_type": "json",
+                "base64": "1",
+                "picfile": base64.b64encode(image).decode(),
+            },
+            headers={
+                "referer": f"{self.BASE_URL}/{ctx.uin}",
+                "origin": self.BASE_URL,
+            },
+            timeout=60,
+        )
+        logger.debug(raw)
+        return ApiResponse.from_raw(raw, code_key="ret", msg_key="msg")
 
     async def get_visitor(self) -> ApiResponse:
         """获取访客数"""
