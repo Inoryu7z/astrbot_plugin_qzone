@@ -125,6 +125,56 @@
                 },
                 "default": 600
             },
+            "comment_latest_count": {
+                "description": "定时评论时最多评论几条说说",
+                "type": "int",
+                "hint": "定时评论任务每次最多评论几条说说（只评论自己未评论过的）",
+                "slider": {
+                    "min": 1,
+                    "max": 20,
+                    "step": 1
+                },
+                "default": 3
+            },
+            "reply_cron": {
+                "description": "自动回复评论的基准触发时间",
+                "type": "string",
+                "hint": "自动检查自己说说下的新评论并回复。使用 Cron 表达式定义基准时间；实际执行时间 = 基准点 ± 偏移秒数（随机）。留空表示禁用此功能",
+                "default": ""
+            },
+            "reply_offset": {
+                "description": "自动回复评论的时间偏移（秒）",
+                "type": "int",
+                "hint": "基于基准触发时间做随机前后浮动。设为 600 表示会在基准触发时间前后 600 秒内随机触发；设为 0 则严格按 cron 时间触发",
+                "slider": {
+                    "min": 0,
+                    "max": 3600,
+                    "step": 1
+                },
+                "default": 600
+            },
+            "auto_reply_prob": {
+                "description": "收到新评论时自动回复的概率",
+                "type": "float",
+                "hint": "自己的说说收到评论或自己的评论被回复时，概率触发自动回复。推荐设得非常小，0表示禁用",
+                "slider": {
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.0001
+                },
+                "default": 0
+            },
+            "max_reply_depth": {
+                "description": "自动回复的最大深度",
+                "type": "int",
+                "hint": "限制自动回复的嵌套层数。1表示只回复一次（对方再回复则不再自动回复），0表示不限制",
+                "slider": {
+                    "min": 0,
+                    "max": 10,
+                    "step": 1
+                },
+                "default": 1
+            },
             "read_prob": {
                 "description": "聊天时触发评说说的概率",
                 "type": "float",

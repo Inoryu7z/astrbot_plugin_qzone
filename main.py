@@ -1623,6 +1623,12 @@ class QzonePlugin(Star):
                     self._scheduled_loop("comment", self.settings.comment_cron, self.settings.comment_offset, self._auto_comment_once)
                 )
             )
+        if self.settings.reply_cron:
+            self._scheduled_tasks.append(
+                asyncio.create_task(
+                    self._scheduled_loop("reply", self.settings.reply_cron, self.settings.reply_offset, self._auto_reply_once)
+                )
+            )
 
     async def _scheduled_loop(self, name: str, cron: str, offset: int, action: Any) -> None:
         while True:
@@ -1769,6 +1775,135 @@ class QzonePlugin(Star):
                 pass
         if commented:
             logger.info("qzone scheduled comment succeeded commented=%s", commented)
+
+    def _auto_reply_state_path(self) -> Path:
+        return self.data_dir / "auto_reply_state.json"
+
+    def _load_auto_reply_state(self) -> dict[str, Any]:
+        path = self._auto_reply_state_path()
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save_auto_reply_state(self, state: dict[str, Any]) -> None:
+        path = self._auto_reply_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        recent = dict(sorted(state.items(), key=lambda item: item[1].get("last_reply_at", 0), reverse=True)[:500])
+        path.write_text(
+            json.dumps(recent, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def _reply_depth_for_comment(self, state: dict[str, Any], comment_key: str) -> int:
+        entry = state.get(comment_key)
+        if not isinstance(entry, dict):
+            return 0
+        return int(entry.get("depth", 0) or 0)
+
+    def _record_reply(self, state: dict[str, Any], comment_key: str, *, depth: int) -> None:
+        state[comment_key] = {
+            "depth": depth,
+            "last_reply_at": int(time.time()),
+        }
+
+    async def _auto_reply_once(self) -> None:
+        logger.info("qzone scheduled reply started")
+        await self._ensure_cookie_ready()
+        await self._ensure_daemon()
+        login_uin = 0
+        try:
+            status = await self.controller.get_status(probe_daemon=False)
+            login_uin = int(status.get("login_uin") or 0)
+        except Exception:
+            pass
+        if not login_uin:
+            logger.info("qzone scheduled reply skipped: no login_uin")
+            return
+
+        max_depth = int(getattr(self.settings, "max_reply_depth", 1) or 1)
+        state = self._load_auto_reply_state()
+        fetch_limit = max(5, int(getattr(self.settings, "max_feed_limit", 20) or 20))
+        payload = await self.controller.list_feeds(hostuin=login_uin, limit=fetch_limit, scope="self")
+        entries = self._to_feed_entries(payload)
+        replied = 0
+
+        for entry in entries:
+            if not entry.fid or not entry.hostuin:
+                continue
+            try:
+                detail_payload = await self.controller.detail_feed(hostuin=entry.hostuin, fid=entry.fid, appid=entry.appid)
+            except Exception:
+                continue
+            entry_data = detail_payload.get("entry")
+            if isinstance(entry_data, dict):
+                detail_entry = FeedEntry(**entry_data)
+                if detail_entry.fid == entry.fid and detail_entry.hostuin == entry.hostuin:
+                    entry = detail_entry
+            post = post_from_entry(entry, detail=(detail_payload or {}).get("raw"), local_id=0)
+            raw_comments = detail_payload.get("comments") or []
+            post.comments = [
+                QzoneComment(
+                    commentid=str(item.get("commentid") or ""),
+                    uin=int(item.get("uin") or 0),
+                    nickname=str(item.get("nickname") or ""),
+                    content=str(item.get("content") or ""),
+                )
+                for item in raw_comments
+                if isinstance(item, dict)
+            ]
+            others_comments = [c for c in post.comments if c.uin != login_uin]
+            if not others_comments:
+                continue
+
+            for comment in others_comments:
+                comment_key = f"{entry.hostuin}:{entry.fid}:{comment.commentid}"
+                current_depth = self._reply_depth_for_comment(state, comment_key)
+                if max_depth > 0 and current_depth >= max_depth:
+                    continue
+                already_replied = any(
+                    rc.uin == login_uin
+                    and str(rc.content or "").strip()
+                    for rc in post.comments
+                    if rc.commentid != comment.commentid
+                )
+                if already_replied and current_depth > 0:
+                    continue
+
+                reply_text = await self._generate_reply_text(None, post, comment)
+                if not reply_text.strip():
+                    continue
+                try:
+                    await self.controller.reply_comment(
+                        hostuin=entry.hostuin,
+                        fid=entry.fid,
+                        commentid=comment.commentid,
+                        comment_uin=comment.uin,
+                        content=reply_text.strip(),
+                        appid=entry.appid,
+                    )
+                except Exception as exc:
+                    logger.warning("qzone scheduled reply failed for %s: %s", comment_key, exc)
+                    continue
+
+                self._record_reply(state, comment_key, depth=current_depth + 1)
+                self._save_auto_reply_state(state)
+                replied += 1
+                try:
+                    await self._notify_admin_post_card(
+                        None,
+                        post,
+                        f"定时自动回复了 {comment.nickname or '用户'} 的评论：{truncate(reply_text, 60)}",
+                        comment_text=reply_text,
+                    )
+                except Exception:
+                    pass
+                break
+
+        if replied:
+            logger.info("qzone scheduled reply succeeded replied=%s", replied)
 
     def _get_cookie_lock(self) -> asyncio.Lock:
         if self._cookie_lock is None:
@@ -1971,7 +2106,8 @@ class QzonePlugin(Star):
     async def qzone_capture_aiocqhttp_client(self, event: AstrMessageEvent):
         self._capture_onebot_client(event)
         should_auto_read = self.settings.read_prob > 0 and random.random() < self.settings.read_prob
-        if not should_auto_read:
+        should_auto_reply = self.settings.auto_reply_prob > 0 and random.random() < self.settings.auto_reply_prob
+        if not should_auto_read and not should_auto_reply:
             self._schedule_bootstrap_auto_bind("aiocqhttp capture", event)
             return
         group_id = str(self._group_id(event) or "")
@@ -1985,26 +2121,117 @@ class QzonePlugin(Star):
         try:
             await self._ensure_cookie_ready(event)
             await self._ensure_daemon()
-            posts = await self._posts_for_event(
-                event,
-                ("看说说", "查看说说"),
-                target_id=int(sender_id or 0),
-                no_commented=True,
-                no_self=True,
-            )
-            if not posts:
+        except Exception:
+            self._schedule_bootstrap_auto_bind("aiocqhttp capture", event)
+            return
+
+        if should_auto_read:
+            try:
+                posts = await self._posts_for_event(
+                    event,
+                    ("看说说", "查看说说"),
+                    target_id=int(sender_id or 0),
+                    no_commented=True,
+                    no_self=True,
+                )
+                if not posts:
+                    return
+                post = posts[0]
+                content = await self._generate_comment_text(event, post)
+                if not content.strip():
+                    return
+                await self._post_service().comment_post(post, content.strip())
+                if self.settings.like_when_comment:
+                    await self._post_service().like_post(post)
+                if not self.settings.show_name:
+                    await self._notify_admin_post_card(event, post, f"已自动评论 {self._post_display_nickname(post)} 的说说：{truncate(content, 60)}")
+            except Exception as exc:
+                logger.debug("qzone probabilistic read/comment failed: %s", exc)
+
+        if should_auto_reply:
+            try:
+                await self._probabilistic_auto_reply(event)
+            except Exception as exc:
+                logger.debug("qzone probabilistic auto reply failed: %s", exc)
+
+    async def _probabilistic_auto_reply(self, event: AstrMessageEvent) -> None:
+        login_uin = 0
+        try:
+            status = await self.controller.get_status(probe_daemon=False)
+            login_uin = int(status.get("login_uin") or 0)
+        except Exception:
+            pass
+        if not login_uin:
+            return
+
+        max_depth = int(getattr(self.settings, "max_reply_depth", 1) or 1)
+        state = self._load_auto_reply_state()
+        fetch_limit = max(3, int(getattr(self.settings, "max_feed_limit", 20) or 20))
+        payload = await self.controller.list_feeds(hostuin=login_uin, limit=fetch_limit, scope="self")
+        entries = self._to_feed_entries(payload)
+
+        for entry in entries:
+            if not entry.fid or not entry.hostuin:
+                continue
+            try:
+                detail_payload = await self.controller.detail_feed(hostuin=entry.hostuin, fid=entry.fid, appid=entry.appid)
+            except Exception:
+                continue
+            entry_data = detail_payload.get("entry")
+            if isinstance(entry_data, dict):
+                detail_entry = FeedEntry(**entry_data)
+                if detail_entry.fid == entry.fid and detail_entry.hostuin == entry.hostuin:
+                    entry = detail_entry
+            post = post_from_entry(entry, detail=(detail_payload or {}).get("raw"), local_id=0)
+            raw_comments = detail_payload.get("comments") or []
+            post.comments = [
+                QzoneComment(
+                    commentid=str(item.get("commentid") or ""),
+                    uin=int(item.get("uin") or 0),
+                    nickname=str(item.get("nickname") or ""),
+                    content=str(item.get("content") or ""),
+                )
+                for item in raw_comments
+                if isinstance(item, dict)
+            ]
+            others_comments = [c for c in post.comments if c.uin != login_uin]
+            if not others_comments:
+                continue
+
+            for comment in others_comments:
+                comment_key = f"{entry.hostuin}:{entry.fid}:{comment.commentid}"
+                current_depth = self._reply_depth_for_comment(state, comment_key)
+                if max_depth > 0 and current_depth >= max_depth:
+                    continue
+
+                reply_text = await self._generate_reply_text(event, post, comment)
+                if not reply_text.strip():
+                    continue
+                try:
+                    await self.controller.reply_comment(
+                        hostuin=entry.hostuin,
+                        fid=entry.fid,
+                        commentid=comment.commentid,
+                        comment_uin=comment.uin,
+                        content=reply_text.strip(),
+                        appid=entry.appid,
+                    )
+                except Exception as exc:
+                    logger.warning("qzone probabilistic reply failed for %s: %s", comment_key, exc)
+                    continue
+
+                self._record_reply(state, comment_key, depth=current_depth + 1)
+                self._save_auto_reply_state(state)
+                try:
+                    await self._notify_admin_post_card(
+                        event,
+                        post,
+                        f"概率触发回复了 {comment.nickname or '用户'} 的评论：{truncate(reply_text, 60)}",
+                        comment_text=reply_text,
+                    )
+                except Exception:
+                    pass
                 return
-            post = posts[0]
-            content = await self._generate_comment_text(event, post)
-            if not content.strip():
-                return
-            await self._post_service().comment_post(post, content.strip())
-            if self.settings.like_when_comment:
-                await self._post_service().like_post(post)
-            if not self.settings.show_name:
-                await self._notify_admin_post_card(event, post, f"已自动评论 {self._post_display_nickname(post)} 的说说：{truncate(content, 60)}")
-        except Exception as exc:
-            logger.debug("qzone probabilistic read/comment failed: %s", exc)
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("访客", alias={"查看访客"})
