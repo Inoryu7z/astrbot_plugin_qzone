@@ -1,5 +1,45 @@
 # Changelog
 
+## v4.0.0
+
+架构升级 — 全面引入 daemon 守护进程架构，参考同类插件优秀设计：
+
+- 🏗️ **Daemon 守护进程架构**：QQ空间会话独立于 AstrBot 运行，通过 HTTP API 通信，AstrBot 重启不影响登录态
+  - `QzoneDaemonController` 管理 daemon 子进程生命周期、keepalive、自动重启、端口冲突检测
+  - `daemon_main.py` 作为独立进程入口点
+
+- 🔐 **自动绑定 Cookie**：从 OneBot API（`get_cookies`、`get_credentials`、`get_login_info`）自动获取 Cookie，无需手动填写
+  - 支持重试机制（3 次重试，间隔 1 秒）
+  - 支持 `qzone bind` 手动绑定和自动绑定两种模式
+
+- 🛡️ **日志脱敏**：`_redact_for_log` / `_safe_for_tool_log` / `_safe_for_llm` 递归遮蔽 cookie/token/skey 等敏感字段和 URL 参数
+
+- 🧹 **LLM 输出清洗管道**：`_strip_code_fence` → `_extract_json_field` → `_extract_assignment_field` → `_remove_generation_chatter` → `_looks_instruction_like` → `_clean_short_reply`
+
+- 🎨 **内置 QQ空间风格渲染器**：用 PIL/Pillow 从零实现仿 QQ空间卡片渲染（圆形头像、自适应字体、图片网格、评论区域）
+
+- ✅ **点赞验证机制**：点赞后重新获取说说详情确认状态，失败自动用 HTTP 协议 unikey 重试
+
+- 🚨 **结构化错误体系**：`QzoneBridgeError` 基类 → `QzoneNeedsRebind` / `QzoneAuthError` / `QzoneRequestError` / `QzoneParseError` / `DaemonUnavailableError`
+
+- 📡 **Feed 多层降级**：主 API → Legacy API → 缓存查询
+
+- 🔒 **SSRF 防护**：禁止加载指向内网/localhost/私有IP的远程图片
+
+- 🧹 **清理旧代码**：移除已被 qzone_bridge 替代的 `core/qzone/`、`core/llm_action.py`、`core/scheduler.py`、`core/service.py`、`core/post.py`
+
+- 🔧 **兼容性修复**：
+  - `PluginConfig` 现在同时接受 `AstrBotConfig` 和 `dict` 作为配置源
+  - `CampusWall` 统一使用 `AstrMessageEvent` 类型，不再依赖 `AiocqhttpMessageEvent`
+  - 修复投稿/匿名投稿命令未 yield 结果的问题
+
+- 📦 **新增依赖**：`httpx`、`aiohttp`、`Pillow`、`aiosqlite`
+
+- ⚙️ **新增配置项**：`daemon_port`、`keepalive_interval`、`auto_start_daemon`、`auto_bind_cookie`、`cookie_domain`、`admin_uins`、`user_agent`、`render_publish_result`、`render_result_width`、`comment_max_length`
+
+- 🙏 **致谢**：v4.0.0 的 daemon 架构设计参考了 [astrbot_plugin_qzone_ultra](https://github.com/diaomin66/astrbot_plugin_qzone_ultra)（作者：雪碧bir）的优秀实践，特此致谢
+
+
 ## v3.2.6
 
 修复：

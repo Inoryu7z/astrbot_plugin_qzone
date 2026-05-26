@@ -5,9 +5,10 @@ import zoneinfo
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from types import MappingProxyType, UnionType
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
 
-from aiocqhttp import CQHttp
+if TYPE_CHECKING:
+    from aiocqhttp import CQHttp
 
 from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
@@ -94,14 +95,8 @@ class ConfigNode:
         return MappingProxyType(self._data)
 
     def save_config(self) -> None:
-        """
-        保存配置到磁盘（仅允许在根节点调用）
-        """
-        if not isinstance(self._data, AstrBotConfig):
-            raise RuntimeError(
-                f"{self.__class__.__name__}.save_config() 只能在根配置节点上调用"
-            )
-        self._data.save_config()
+        if isinstance(self._data, AstrBotConfig):
+            self._data.save_config()
 
 
 # ============ 插件自定义配置 ==================
@@ -153,10 +148,10 @@ class PluginConfig(ConfigNode):
 
     _DB_VERSION = 4
 
-    def __init__(self, cfg: AstrBotConfig, context: Context):
+    def __init__(self, cfg: AstrBotConfig | MutableMapping[str, Any], context: Context):
         super().__init__(cfg)
         self.context = context
-        self.data_dir = StarTools.get_data_dir("astrbot_plugin_qzone")
+        self.data_dir = StarTools.get_data_dir("astrbot_plugin_qzone_Inoryu7z")
 
         self.cache_dir = self.data_dir / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -187,7 +182,7 @@ class PluginConfig(ConfigNode):
         self.admin_id = self.admins_id[0] if self.admins_id else None
         self.save_config()
 
-        self.client: CQHttp | None = None
+        self.client: "CQHttp | None" = None
 
     def _normalize_id(self):
         """仅保留纯数字ID"""

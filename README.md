@@ -120,3 +120,5 @@ git clone https://github.com/Zhalslar/astrbot_plugin_qzone
 - [一个QQ空间爬虫项目](https://github.com/wwwpf/QzoneExporter)
 
 - [QQ空间](https://qzone.qq.com/) 网页显示本地数据时使用的样式与布局均来自于QQ空间。
+
+- [astrbot_plugin_qzone_ultra](https://github.com/diaomin66/astrbot_plugin_qzone_ultra)（作者：雪碧bir）— v4.0 daemon 架构设计参考了此插件的优秀实践

@@ -1,4 +1,9 @@
-from aiocqhttp import CQHttp
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aiocqhttp import CQHttp
 
 from astrbot.api import logger
 from astrbot.core.message.components import BaseMessageComponent, Image, Plain
