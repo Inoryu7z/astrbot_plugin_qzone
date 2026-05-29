@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.0.1
+
+修复 Cookie 绑定逻辑：
+
+- 🐛 **修复 `bind_cookie` 覆盖有效 Cookie**：daemon 端 `bind_cookie` 改为先验证 Cookie 有效再写入 state，验证失败时恢复旧 session 而非标记 `needs_rebind=True`
+- 🐛 **修复 config Cookie 覆盖手动绑定**：`initialize` 中若 daemon 已有有效 Cookie，不再用 config 中的 `cookies_str` 覆盖
+- 🔧 **增强自动绑定重试**：重试次数 3→5，间隔 1s→3s；`on_astrbot_loaded` 延迟 5 秒后重试
+- 🔧 **改进 OneBot 客户端查找**：优先遍历 `platform_insts`，增加 `get_platform_inst` fallback
+
 ## v4.0.0
 
 架构升级 — 全面引入 daemon 守护进程架构，参考同类插件优秀设计：

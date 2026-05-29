@@ -313,7 +313,7 @@ class QzoneDaemonService:
         resolved_uin = normalize_uin(cookies, override=uin)
         if not resolved_uin:
             raise QzoneParseError("Cookie 缺少 uin / p_uin，无法识别登录 QQ")
-        self.state.session = SessionState(
+        candidate = SessionState(
             uin=resolved_uin,
             cookies=cookies,
             qzonetokens={},
@@ -324,15 +324,17 @@ class QzoneDaemonService:
             revision=self.state.session.revision + 1,
             needs_rebind=False,
         )
-        self.client.update_session(self.state.session)
+        saved_session = self.state.session
+        self.client.update_session(candidate)
+        try:
+            await self.client.mfeeds_get_count()
+        except Exception as exc:
+            self.client.update_session(saved_session)
+            raise
+        self.state.session = candidate
         self.client.feed_cache.clear()
         self.recent_feed_entries.clear()
-        self.save()
-        try:
-            await self.warmup()
-        except Exception as exc:
-            self._set_error(exc)
-            raise
+        self._set_success(defer_save=False)
         return self.snapshot()
 
     async def unbind(self) -> dict[str, Any]:

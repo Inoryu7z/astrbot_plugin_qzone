@@ -29,8 +29,8 @@ REQUIRED_QZONE_BRIDGE_API_VERSION = 2026052305
 LEGACY_MIGRATION_FILES = ("state.json", "drafts.json", "posts.json")
 LEGACY_MIGRATION_SENTINEL = ".legacy-qzone-migration.json"
 LEGACY_MIGRATION_LOCK = ".legacy-qzone-migration.lock"
-AUTO_BIND_RETRY_ATTEMPTS = 3
-AUTO_BIND_RETRY_DELAY_SECONDS = 1.0
+AUTO_BIND_RETRY_ATTEMPTS = 5
+AUTO_BIND_RETRY_DELAY_SECONDS = 3.0
 UNKNOWN_POST_TIME_TEXT = "未知时间"
 
 SENSITIVE_LOG_KEYS = {
@@ -1915,19 +1915,30 @@ class QzonePlugin(Star):
         platform = None
         if context is not None:
             try:
-                platform = context.get_platform("aiocqhttp")
+                for inst in getattr(getattr(context, "platform_manager", None), "platform_insts", []):
+                    meta = inst.meta()
+                    if getattr(meta, "name", "") == "aiocqhttp":
+                        platform = inst
+                        break
             except Exception:
-                platform = None
+                pass
             if platform is None:
                 try:
-                    platform_manager = getattr(context, "platform_manager", None)
-                    for candidate in getattr(platform_manager, "platform_insts", []):
-                        meta = candidate.meta()
-                        if getattr(meta, "name", "") == "aiocqhttp":
-                            platform = candidate
-                            break
+                    platform = context.get_platform("aiocqhttp")
                 except Exception:
                     platform = None
+            if platform is None:
+                try:
+                    get_inst = getattr(context, "get_platform_inst", None)
+                    if callable(get_inst):
+                        pm = getattr(context, "platform_manager", None)
+                        for inst in getattr(pm, "platform_insts", []):
+                            meta = inst.meta()
+                            if getattr(meta, "name", "") == "aiocqhttp":
+                                platform = get_inst(getattr(meta, "id", ""))
+                                break
+                except Exception:
+                    pass
         if platform is not None:
             bot = getattr(platform, "bot", None)
             if bot is not None:
@@ -2089,18 +2100,30 @@ class QzonePlugin(Star):
         await self.db.initialize()
 
         if self.settings.cookies_str:
+            has_valid_cookie = False
             try:
-                payload = await self.controller.bind_cookie_local(self.settings.cookies_str, source="config")
-                self._schedule_publish_render_asset_preload("config bind", status=payload)
-            except QzoneBridgeError as exc:
-                logger.warning("qzone config cookie bind failed: %s", exc)
+                status = await self.controller.get_status(probe_daemon=False)
+                has_valid_cookie = (
+                    int(status.get("cookie_count") or 0) > 0
+                    and not bool(status.get("needs_rebind"))
+                )
+            except QzoneBridgeError:
+                pass
+            if not has_valid_cookie:
+                try:
+                    payload = await self.controller.bind_cookie_local(self.settings.cookies_str, source="config")
+                    self._schedule_publish_render_asset_preload("config bind", status=payload)
+                except QzoneBridgeError as exc:
+                    logger.warning("qzone config cookie bind failed: %s", exc)
         self._start_scheduled_tasks()
         self._schedule_bootstrap_auto_bind("initialize")
 
     @filter.on_astrbot_loaded()
     async def qzone_on_astrbot_loaded(self):
         self._start_scheduled_tasks()
-        self._schedule_bootstrap_auto_bind("astrbot load")
+        if not getattr(self, "_auto_bind_bootstrap_succeeded", False):
+            await asyncio.sleep(5)
+            self._schedule_bootstrap_auto_bind("astrbot load")
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     async def qzone_capture_aiocqhttp_client(self, event: AstrMessageEvent):
